@@ -1,0 +1,4 @@
+"","coefficients","values"
+"(Intercept)","season_int",-2.56547479228987
+"lagged_pct_rainfall","season_lagged_rain",1.99618935961511
+"pct_rainfall","season_present_rain",1.5827621570606

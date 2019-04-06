@@ -1,0 +1,3 @@
+"","coefficient","value"
+"sin(2 * pi * year/7)","sin_coef",-0.190384045495927
+"cos(2 * pi * year/7)","cos_coef",0.462335197559909
