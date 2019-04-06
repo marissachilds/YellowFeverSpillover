@@ -1,0 +1,12 @@
+﻿temperature_mean,longevity_days,number_mosquitoes,location,source,notes
+20,19.4,66,lab,Bates 1947,Hg. spegazinni revised to Hg. Janthinomys by Arnell 1973
+25,18.3,128,lab,Bates 1947,Hg. spegazinni revised to Hg. Janthinomys by Arnell 1973
+26.6,14.5,154,lab,Bates 1947,Hg. spegazinni revised to Hg. Janthinomys by Arnell 1973
+30,13.8,512,lab,Bates 1947,Hg. spegazinni revised to Hg. Janthinomys by Arnell 1973
+35,4.8,132,lab,Bates 1947,Hg. spegazinni revised to Hg. Janthinomys by Arnell 1973
+26.45,38.9,,field,Galindo 1958,"Sa. chloropterus, used average of temperature range described, was lab setting, but achieved field length mortality"
+26.6,19,1,field,Degallier et al. 1998,"Hg. janthinomys, used maximum days after release recapture from 1989 experiment and average of min and max temperature from 1989"
+27.1,27,1,field,Degallier et al. 1998,"Hg. janthinomys, used maximum days after release recapture from 1993 experiment and average of min and max temperature from 1993"
+26.6,44,1,field,Degallier et al. 1998,"Sa. chloropterus, used maximum days after release recapture from 1989 experiment and average of min and max temperature from 1989"
+27.1,26,1,field,Degallier et al. 1998,"Sa. chloropterus, used maximum days after release recapture from 1993 experiment and average of min and max temperature from 1993"
+26.6,21,1,field,Degallier et al. 1998,"Hg. leucocelaenus, used maximum days after release recapture from 1989 experiment and average of min and max temperature from 1989"
