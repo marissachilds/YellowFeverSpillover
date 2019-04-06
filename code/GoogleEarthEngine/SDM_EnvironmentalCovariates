@@ -1,0 +1,137 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var rain = ee.ImageCollection("TRMM/3B42"),
+    countries = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017"),
+    geometry = /* color: #d63000 */ee.Geometry.MultiPoint();
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/* This code is for exporting environmental covariates for use in 
+a species distribution model of mosquito species over all of 
+South America */
+
+// Subset the countries boundaries to South America
+var SouthAmerica = countries.filter(ee.Filter.eq("wld_rgn", "South America"));
+var border = SouthAmerica.geometry().dissolve();
+var bound_box = border.bounds();
+
+// Set limits for taking averages
+var start_date = ee.Date("2001-01-01");
+var start_year = 2001;
+var end_year = 2017;
+var end_date = ee.Date("2017-12-31");
+var date_range = ee.DateRange(start_date, end_date);
+
+// Calculate yearly average min, max, and mean LST
+var temperatures = ee.ImageCollection('MODIS/006/MYD11A1');
+var years = ee.List.sequence(start_year+1, end_year);
+var months = ee.List.sequence(1, 12);
+// Group by year, and then reduce within groups by min(), then take mean over all years.
+var MinAnnualTemp = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return temperatures.filter(ee.Filter.calendarRange(y, y, 'year'))
+      .select(["LST_Day_1km"])
+      .reduce(ee.Reducer.min())
+      .set('year', y);
+})).reduce(ee.Reducer.mean())
+.clip(SouthAmerica);
+// Group by year, reduce within group by max, and then take mean to get average maximum annual LST
+var MaxAnnualTemp = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return temperatures.filter(ee.Filter.calendarRange(y, y, 'year'))
+      .select(["LST_Day_1km"])
+      .reduce(ee.Reducer.max())
+      .set('year', y);
+})).reduce(ee.Reducer.mean())
+.clip(SouthAmerica);
+// Repeat for average median LST
+var MedAnnualTemp = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return temperatures.filter(ee.Filter.calendarRange(y, y, 'year'))
+      .select(["LST_Day_1km"])
+      .reduce(ee.Reducer.median())
+      .set('year', y);
+})).reduce(ee.Reducer.mean())
+.clip(SouthAmerica);
+
+// Calcaulate average median annual EVI similarly
+var veg = ee.ImageCollection('MODIS/006/MOD13A2');
+var MedianAnnualEVI = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return veg.filter(ee.Filter.calendarRange(y, y, 'year'))
+      .select(["EVI"])
+      .reduce(ee.Reducer.median())
+      .set('year', y);
+})).reduce(ee.Reducer.mean())
+.clip(SouthAmerica);
+
+//Add forest cover image from hansen 2017 and use the 2000 tree cover percentage
+var FC = ee.Image('UMD/hansen/global_forest_change_2017_v1_5')
+  .select(['treecover2000']);
+FC = FC.clip(SouthAmerica);
+
+//Add land cover image collection for 2007 (about half way between 1996 and 2018
+var LC = ee.ImageCollection('MODIS/006/MCD12Q1')
+  .filter(ee.Filter.calendarRange(2007, 2007, 'year')).first().select(['LC_Prop2'])
+  .reproject("EPSG:4326", [1,0,0,0,1,0]);
+LC = LC.clip(SouthAmerica);
+
+// Add elevation data
+var elev = ee.Image('NOAA/NGDC/ETOPO1').select(['bedrock']).clip(SouthAmerica);
+
+// Add precipitation
+var precip = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY');
+
+// calculate annual precipitation 
+var AnnualPrecip = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return precip.filter(ee.Filter.calendarRange(y, y, 'year'))
+      .select(['precipitation'])
+      .reduce(ee.Reducer.sum())
+      .set('year', y);
+})).reduce(ee.Reducer.mean())
+.clip(SouthAmerica);
+
+// To calculate precipitation in the wettest and driest months, first 
+// create a function that, when given precipitation from one month 
+// over many years, will calculate sum of precipitation for each year-month 
+// combo and return as image collection
+var average_monthly = function(monthly_precips){
+  monthly_precips = ee.ImageCollection(monthly_precips);
+  return ee.ImageCollection.fromImages(years.map(function(y){
+    return monthly_precips.filter(ee.Filter.calendarRange(y, y, 'year'))
+      .select(['precipitation'])
+      .reduce(ee.Reducer.sum())
+      .set('year', y);
+  })).reduce(ee.Reducer.mean());
+};
+
+// Apply the above function to calculate average monthly precipitation for each month of the year
+var MonthlyPrecip = ee.ImageCollection.fromImages(months.map(function (m){
+    return average_monthly(precip.filter(ee.Filter.calendarRange(m, m, 'month')))
+    .clip(SouthAmerica);
+  }));
+
+// For each pixel, identify the minimum precip and maximum precip to get wettest and driest month precipitations
+var DriestMonthPrecip = MonthlyPrecip.reduce(ee.Reducer.min());
+var WettestMonthPrecip = MonthlyPrecip.reduce(ee.Reducer.max());
+
+
+// Make an export function that exports all covariates at a 5km scale  
+var export_func = function(image, id){
+  Export.image.toDrive({
+  image: image,
+  folder: 'YFV',
+  description: id,
+  scale: 5000,
+  region: bound_box});
+};
+
+// Export covariates to google drive
+export_func(MinAnnualTemp, "MinAnnualLST");
+export_func(MaxAnnualTemp, "MaxAnnualLST");
+export_func(MedAnnualTemp, "MedAnnualLST");
+export_func(AnnualPrecip, "AnnualPrecip");
+export_func(DriestMonthPrecip, 'DriestMonthPrecip');
+export_func(WettestMonthPrecip, 'WettestMonthPrecip');
+export_func(elev, 'Elev');
+export_func(MedianAnnualEVI, 'MedianAnnualEVI');
+export_func(FC, 'ForestCover');
+export_func(LC, 'LandCover');

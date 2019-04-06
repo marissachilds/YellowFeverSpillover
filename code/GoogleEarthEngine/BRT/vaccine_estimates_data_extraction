@@ -1,0 +1,22 @@
+/* Code for extracting estimated vaccine coverage from rasters 
+provided by Freya Shearer for Brazil 2001 to 2016 */
+
+// Import vaccine coverage estimates and municipality shapefile
+var vc = ee.ImageCollection("users/marissac/YFV/untargeted_vaccine_estimates").toBands();
+var muni = ee.FeatureCollection("users/marissac/YFV/brazil_municipality_shapes");
+
+// Calculate vaccine coverage as the most often observed one in that muni
+// We use mode since pixels are large in vaccine estimates and sometimes 
+// do not match municipality lines exactly
+var muni_vax = vc.reduceRegions(muni, ee.Reducer.mode())
+                    .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+
+// Export municipality estimates to drive
+Export.table.toDrive({
+  collection: muni_vax,
+  description: "municipality_vax_estimates_2001_2016",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});

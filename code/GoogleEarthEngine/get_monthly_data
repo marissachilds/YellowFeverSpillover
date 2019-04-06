@@ -1,0 +1,68 @@
+/* In order to run the spillover model, we need monthly average 
+temperatures. Rather than repeatedly calculating them within the 
+spillover model, we here calculate monthly average temperatures 
+and save the output to a google asset. NOTE: these averages were 
+originally calculated and saved for 2000-2016, to extend the 
+estimates from the spillover model, we later calculated monthly 
+average temperatures for 2017 and 2018. This can be done by changing 
+the range of the years variable and/or the range of the obs_ind 
+variable, which controls which observations from all combinations of 
+the years and months specified you want to calculate and export. 
+This code is currently set to calculate monthly average for each 
+pixel from January 2017 to June 2018. */
+
+// Import country boundaries and temperature image collection
+var SouthAmerica = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017").filter(ee.Filter.eq("wld_rgn", "South America"));
+var Brazil = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017").filter(ee.Filter.eq("country_na", "Brazil"));
+var bound_box = Brazil.geometry().bounds().buffer(100000);
+var temperatures = ee.ImageCollection("NASA/GLDAS/V021/NOAH/G025/T3H").select("Tair_f_inst");
+
+// Specify the years and months of interest
+// Previously this was done separately for 2000-2016 and 2017-2018 for no particular reason
+var years = ee.List.sequence(2017, 2018);
+var months = ee.List.sequence(1, 12);
+var times = ee.Array.cat(years.map(function(y){
+  return months.map(function(m){
+    return ee.List([y, m]);
+  });
+}));
+
+// Select the indices from the times list that you want to calcuate monthly mean temperatures for
+var obs_ind = ee.List.sequence(0, 17);
+
+// For each index, get the year and month, then select the temperature images that correspond
+// Calculate the average temperature for each pixel and return the average image
+var MonthlyAvgTemps = ee.ImageCollection.fromImages(obs_ind.map(function(i){
+  var y = times.get([i,0]);
+  var m = times.get([i,1]);
+  var ymTemps = temperatures.filter(ee.Filter.calendarRange(y, y, 'year'))
+                            .filter(ee.Filter.calendarRange(m, m, 'month'));
+  var Temps_avg = ymTemps.reduce(ee.Reducer.mean())
+                         .set("id", "Tair")
+                         .rename([ee.String("mean_").cat(ee.Number(y).format("%d"))
+                                                    .cat("_")
+                                                    .cat(ee.Number(m).format("%d"))]);
+  return Temps_avg;
+}));
+
+// Set up the band names to be used 
+var band_names = obs_ind.map(function(i){
+  var y = times.get([i,0]);
+  var m = times.get([i,1]);
+  return ee.String("Tair_mean_").cat(ee.Number(y).format("%d"))
+                                                    .cat("_")
+                                                    .cat(ee.Number(m).format("%d"));
+});
+
+// Turn monthly average images into bands in an image and name the bands informatively
+var out = MonthlyAvgTemps.toBands().rename(band_names);
+
+// Export the monthly average temperature images to an Earth Engine Asset
+// Change asset name and description as necessary for different time ranges
+Export.image.toAsset({
+  image: out,
+  description: 'TairMonthly_201701_201806',
+  assetId: 'TairMonthly_201701_201806',
+  region: bound_box
+});
+

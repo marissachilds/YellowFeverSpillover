@@ -1,0 +1,51 @@
+/* Code for extracting the municipality fire area and fire density 
+   per month to Google Drive */ 
+
+// import image collection of fires and municipality shapefile
+var fire = ee.ImageCollection("MODIS/006/MCD64A1");
+var muni = ee.FeatureCollection("users/marissac/YFV/brazil_municipality_shapes");
+
+// Make a function to convert all burned pixels to be their area
+var toArea = function(image) {
+   return image.select("BurnDate")
+              .gt(ee.Image.constant(0))
+              .multiply(ee.Image.pixelArea())
+              .select(["BurnDate"],[image.id()]);
+};
+
+// Apply the above function to all images, then convert the collection to bands
+var fireArea = fire.map(toArea);
+fireArea = fireArea.toBands();
+
+// For each municipality, calculate total fire area and return as a feature collection
+var muni_fireArea = fireArea.reduceRegions(muni, ee.Reducer.sum())
+                    .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+
+// Export the feature collection to Google Drive
+Export.table.toDrive({
+  collection: muni_fireArea,
+  description: "municipality_fireArea_200111_201809",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});
+
+// For later calculation of percent of municipality with fire, calculate the area of each pixel
+var muni_Area = ee.Image.pixelArea().reduceRegions({
+  collection: muni, 
+  reducer: ee.Reducer.sum(),
+  crs: fire.first().projection().crs(),
+  crsTransform: [463.312716528, 0, -20015109.354, 0, -463.312716527, 10007554.677]
+})
+                    .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+ 
+// export municipality areas to Drive
+Export.table.toDrive({
+  collection: muni_Area,
+  description: "municipality_Area",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});

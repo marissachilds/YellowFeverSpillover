@@ -1,0 +1,40 @@
+/* This code is designed to extract the mean and maximum risk for
+each municipality using from pre-existing risk estimates */
+
+// Read in the municipality borders from IBGE
+var muni = ee.FeatureCollection("users/marissac/YFV/brazil_municipality_shapes");
+
+/* Set the risk metric that you will be using
+   NOTE: Getting municipality-wide means and maxima for all risk will
+   require cycling through the different risk metrics here */
+var est = ee.Image("users/marissac/YFV/EnvRisk_200012_201806");
+
+// Calculate the mean risk metric for each municipality and each band
+var muni_mean = est.reduceRegions(muni,
+                                  ee.Reducer.mean())
+                     .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+
+// Export the mean risk to Google Drive, changing the description as necessary
+Export.table.toDrive({
+  collection: muni_mean,
+  description: "mean_EnvRisk_200012_201806",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});
+
+/* Repeat for maximum risk, again changing the table description 
+   which becomes the file name as necessary */
+var muni_max = est.reduceRegions(muni,
+                                  ee.Reducer.max())
+                    .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+
+Export.table.toDrive({
+  collection: muni_max,
+  description: "max_EnvRisk_200012_201806",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});

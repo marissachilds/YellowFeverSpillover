@@ -1,0 +1,48 @@
+/*Code to extract average number of primate species and maximum number of 
+primate species in each municipality using IUCN primate range data*/
+
+// Import the primate feature collection and convert to an image with 
+// the number of primates 
+var prim_orig = ee.FeatureCollection("users/marissac/YFV/primates");
+var prim = ee.Image(ee.FeatureCollection(prim_orig.map(function(feature){
+  return feature.set({value: ee.Number(1)});
+})).reduceToImage(["value"], ee.Reducer.sum())).unmask(0);
+
+// Also import the municipality shapefile
+var muni = ee.FeatureCollection("users/marissac/YFV/brazil_municipality_shapes");
+
+// Calculate the mean number of primates for each region
+// return it as a feature collection with an empty geometry
+var primate_species_mean = prim.reduceRegions({
+  collection: muni, 
+  reducer: ee.Reducer.mean(),
+  crs: "SR-ORG:6974",
+  scale: 1000
+}).map(function(feature){ 
+  return(ee.Feature(feature).setGeometry(null));
+});
+
+// Calculate the max number of primates for each municipality
+// again returning it as a feature collection with empty geometries
+var primate_species_max = prim.reduceRegions({
+  collection: muni, 
+  reducer: ee.Reducer.max(),
+  crs: "SR-ORG:6974",
+  scale: 1000
+}).map(function(feature){
+  return(ee.Feature(feature).setGeometry(null));
+});                    
+
+// Export both mean and max number of species to Google Drive
+Export.table.toDrive({
+  collection: primate_species_mean,
+  description: "primate_species_mean",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});
+Export.table.toDrive({
+  collection: primate_species_max,
+  description: "primate_species_max",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});

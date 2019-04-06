@@ -1,0 +1,296 @@
+/* This code runs the spillover model over all of Brazil, calculating 
+spillover risk for each 1km x 1km pixel for each month.  The time 
+frame over which this calculation is performed is determined by a combination
+of the years variable, months variable, and obs_ind variable. obs_ind sets (Line 207)
+indices from the times array (determined from combinations of months and years)
+for which the calculations are performed. As this code was used to estimate
+spillover risk from December 2000 to June 2018, some covariates are extrapolated 
+linearly or while others are assumed to be the same in 2017 and 2018 as in 
+2016. There are multiple functions defines and intermediate steps calculated, 
+but ultimately the code outputs a risk metric, converts it to an image with 
+each band the estimate from a different month, and save the image to a GEE asset.
+To estimate different metrics the following lines should be changed: 
+Line 203: if phenomenological is true, a periodic sine curve is used for primate 
+infection prevalence. This is used for periodic disease risk.
+Line 268: change what the function returns between env_risk, imm_env_risk, 
+and pop_risk
+Line 270: change what the output is called. This is used to naming the bands of the 
+image and the asset in GEE
+For environmental risk: phenomenological should be false, the function should return
+env_risk, and I name set the output as "EnvRisk"
+For immunological-environmental risk: phenomenological should be false, the 
+function should return imm_env_risk, and I name set the output as "ImmEnvRisk"
+For population-scaled isk: phenomenological should be false, the function 
+should return pop_risk, and I name set the output as "PopRisk"
+For periodic-environmental risk: phenomenological should be true, the function 
+should return env_risk, and I name set the output as "PhenomEnvRisk"
+*/
+
+
+// make sure this is line 30, then the lines numbers above are correct
+// Read in country boundaries and subset to South America and Brazil
+var countries = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017");
+var SouthAmerica = countries.filter(ee.Filter.eq("wld_rgn", "South America"));
+var Brazil = countries.filter(ee.Filter.eq("country_na", "Brazil"));
+var bound_box = Brazil.geometry().bounds();
+
+// Read in the vector SDM, and convert to density estimate
+var SDM_vectors = ee.Image("users/marissac/YFV/vector_distribution_SDM");
+var rhoV = (ee.Image.constant(1).divide(ee.Image.constant(1).subtract(SDM_vectors))).log().unmask();
+
+// Read in human population estimates
+var pop_temp = ee.ImageCollection("CIESIN/GPWv4/unwpp-adjusted-population-count").toList(1000);
+
+// Read in forest cover data, and copy the 2016 forest cover to be used for 2017 and 2018
+var forest_cov_orig = ee.ImageCollection("users/marissac/YFV/MOD44B_Brazil_reprojected"); 
+var forest_cov = forest_cov_orig.merge(ee.ImageCollection.fromImages([forest_cov_orig.filterMetadata("year", "equals", 2016)
+                                             .first()
+                                             .set({
+                                               year: 2017
+                                             }),
+                                             forest_cov_orig.filterMetadata("year", "equals", 2016)
+                                             .first()
+                                             .set({
+                                               year: 2018
+                                             })]));
+// Read in primate areas, converting to an binary image of whether or not any primate ranges where in a pixel                                            
+var rhoP_orig = ee.FeatureCollection("users/marissac/YFV/primates");
+var rhoP = ee.Image(ee.FeatureCollection(rhoP_orig.map(function(feature){
+  return feature.set({value: ee.Number(1)});
+})).reduceToImage(["value"], ee.Reducer.first())).unmask(0);
+
+// Read in air temperature data, which was saved in two chunks, so combine them into one image
+var Tair = ee.Image.cat(ee.Image("users/marissac/YFV/TairMonthly_200002_201612"),
+                        ee.Image("users/marissac/YFV/TairMonthly_201701_201806"));
+
+// Read in the precipitation and vaccine coverage data
+var precip = ee.ImageCollection("TRMM/3B43V7").filter(ee.Filter.calendarRange(2000, 2018, 'year'));
+var vc_orig = ee.ImageCollection("users/marissac/YFV/untargeted_vaccine_estimates");
+// For vaccine coverage, assume 2017 and 2018 were identical to 2016
+var vc = vc_orig.merge(ee.ImageCollection.fromImages([
+                vc_orig.filterMetadata("year", "equals", 2016).first().set({year: 2017}),
+                vc_orig.filterMetadata("year", "equals", 2016).first().set({year: 2018})
+              ])); 
+
+// Interpolate human population between the 5 years estimated
+var yearlyPop = ee.ImageCollection.fromImages(ee.List.sequence(0,3).map(function(i){
+  var yearlyIncrease = ee.Image(pop_temp.get(ee.Number(i).add(ee.Number(1))))
+                        .subtract(pop_temp.get(i))
+                        .divide(ee.Image.constant(5));
+  var y = ee.Number(ee.Image(pop_temp.get(i)).get('system:index'));
+  return ee.List.sequence(0,4).map(function(j){
+    return ee.Image(pop_temp.get(i)).add(yearlyIncrease.multiply(ee.Image.constant(j)))
+            .set({year: ee.Number.parse(y).add(j)
+            });
+  });
+}).flatten());
+
+// Submodel coefficients, these are results of submodels fit in R
+var beta = 0.00416244986699412; //parameter from dispersal model
+var T0 = 19.1115616547359; // critical thermal minimum for maximum % of mosquitoes infected
+var Tm = 47.0704200614108; // critical thermal maximum for maximum % of mosquitoes infected
+var c = -0.00262329966496026; // scaling constant on maximum % of mosquitoes infected
+var muT = 0.0119821515689775; //coeffient on effect of temperature on when 50% of max of mosquitoes become infected
+var mu0 = 2.36100491719217; // constant for when 50% of max of mosquitoes become infected
+var sigma0 = -0.992033992975907; // coefficient on effect of temperature on standard deviation of EIP
+var sigmaT = -0.0197712167334044; // constant on standard deviation of EIP
+var s_T0 = 8.38686508491458; // critical thermal minimum for mosqito lifespan
+var s_Tm = 38.5139448177677; // critical thermal maximum for mosquito lifespan
+var s_c = -0.136136649724287; // scaling on mosquito lifespan quadratic function
+var season_int = -2.56547479228987; // intercept/constant in function tranforming rainfall to season % of max mosquitos
+var season_lagged_rain = 1.99618935961511; // coefficient on lagged rainfall in function tranforming rainfall to season % of max mosquitos
+var season_present_rain = 1.5827621570606; // coefficient on current rainfall in function tranforming rainfall to season % of max mosquitos
+var sin_coef = -0.190384045495927; // coefficient on sine in phenomenological primate curve
+var cos_coef = 0.462335197559909; // coefficient on cosine in phenomenological primate curve
+var pi = 3.14159265358979; // define pi so we can use it later
+
+// Now set up lists for the years and months to cycle through
+var years = ee.List.sequence(2000, 2018);
+var months = ee.List.sequence(1, 12);
+var times = ee.Array.cat(years.map(function(y){
+  return months.map(function(m){
+    return ee.List([y, m]);
+  });
+}));
+
+// We will also define strings for month and years for use later in naming files
+var times_strings = years.map(function(y){
+  return ee.List(["01", "02", "03", "04", "05", "06", 
+                  "07", "08", "09", "10", "11", "12"]).map(function(m){
+    return ee.Number(y).format("%d").cat(m);
+  });
+}).flatten();
+
+// Define a function to take an image (with a specified band) that is air temp, and the number of days (n) and for each pixel 
+// In the image, calculate the probability a mosquito in that make it n days into the future infectious and alive
+var lambda_func = function(image, days, band){
+  var EIP = image.expression(
+    "(Tair > M_T0 & Tair < M_Tm) ?" +  // For air temperatures in between thermal limits
+    "c*(Tair-M_T0)*(Tair-M_Tm)*(0.5 + 0.5*erf((log(days) - (Tair*muT + mu0))/(sqrt(2)*exp(sigma0 + sigmaT*Tair)))) :" + // EIP is lognormal distributed
+    "0", { // If its outside the thermal limits, EIP won't occur
+    // Read in the relevant coefficients 
+    "M_T0" : T0, 
+    "M_Tm" : Tm,
+    "c"  : c,
+    "muT": muT,
+    "mu0": mu0,
+    "sigma0": sigma0,
+    "sigmaT": sigmaT,
+    "days" : days,
+    "Tair" : image.select(band)
+    });
+    var survive = image.expression(
+    "(Tair > T0 & Tair < Tm) ?" +  // Similarly, for survival, for temperatures between the thermal limits
+    "exp(-days/(c*(Tair-T0)*(Tair-Tm)))" + // probability of survival is exp(-1/L)^days where L is quadratic lifespan function
+    ": 0", { // otherwise its zero
+    // Read in relevant coefficients
+    "T0" : s_T0,
+    "Tm" : s_Tm,
+    "c"  : s_c,
+    "days": days,
+    "Tair" : image.select(band)
+    });
+    return ee.Image(EIP).multiply(survive); // return the product of probability of survival and EIP
+};
+
+// Now we need a gamma, seasonal relative density so calculate max monthly precip for each pixel
+// and divide the precip image for each month by that max to get relative precip
+var MaxMonthlyPrecip = precip.select("precipitation").reduce(ee.Reducer.max());
+var RelPrecip = precip.map(function(image){
+  return image.select("precipitation")
+              .divide(MaxMonthlyPrecip);
+}).toList(1000);
+
+// Then convert relative rainfall, to estimate of relative mosquito abundance using estimates for coefficients
+// Then using logistic transformation to get from the link function to a 0-1 estimate of abundance
+var gamma = ee.List.sequence(1, RelPrecip.length().subtract(1)).map(function(i){
+  var link = ee.Image(RelPrecip.get(i)).multiply(ee.Image.constant(season_present_rain))
+    .add(ee.Image(RelPrecip.get(ee.Number(i).subtract(ee.Number(1))))
+          .multiply(ee.Image.constant(season_lagged_rain)))
+    .add(ee.Image.constant(season_int));
+  return ee.Image.constant(1).divide(ee.Image.constant(1)
+                                      .add((ee.Image.constant(-1).multiply(link)).exp()));
+});
+
+// Lets make a function to make a kernel, where the weight of each pixel is the 
+// mosquito dispersal kernel value at its center, then normalize it to sum to 1
+var kern_negExp = function(p_length, rad){
+  p_length = ee.Number(p_length);
+  rad = ee.Number(rad);
+  var p_area = p_length.pow(2); 
+  var p_radius = (rad.subtract(ee.Number(0.5).multiply(p_length)).divide(p_length)).floor();
+  var x_dist = ee.Array(ee.List.repeat(ee.List.sequence(0,p_radius).reverse().cat(ee.List.sequence(1,p_radius)),
+                              p_radius.multiply(ee.Number(2)).add(ee.Number(1))));
+  var y_dist = x_dist.transpose();
+  var r_dist = (x_dist.multiply(p_length).pow(ee.Number(2)).add(y_dist.multiply(p_length).pow(ee.Number(2)))).pow(ee.Number(0.5));
+  
+  var w = r_dist.multiply(ee.Number(-1)).multiply(ee.Number(beta)).exp().toList();
+  var kernel = ee.Kernel.fixed({
+    weights: w,
+    x: p_radius.add(ee.Number(1)),
+    y: p_radius.add(ee.Number(1)),
+    normalize: true
+  });
+  return(kernel);
+};
+
+// The gamma (relative mosquito abundance) and Tair image collections lack Jan 2000 data, 
+// so their indices are off by one
+// j counts the number of months back we are looking
+// For each month of interest (tau), we calculate lambda for appropriate days,
+// pctP (percent of bites on primates), and beta; then reduce each neighborhood 
+// with the kernel we have defines and output those 4 images
+var phenomenological = ee.Algorithms.IsEqual(ee.Number(1), ee.Number(1));
+print(phenomenological);
+//(11, 221); indices for environmental risk, for lagged environmental risk in BRT
+//(12, 221); indices for all other metrics
+var obs_ind = ee.List.sequence(12, 221); 
+var ests = ee.ImageCollection.fromImages(obs_ind.map(function(i){
+  var j = ee.List.sequence(0, 3);
+  var beta_lambda_int = ee.ImageCollection.fromImages(j.map(function(j_val){
+    // Use i and j to define the month of interest (tau), then get tau's year and month
+    var tau = ee.Number(i).subtract(j_val);
+    var y = ee.Number.parse(times.get([tau,0]));
+    var m = ee.Number.parse(times.get([tau,1]));
+    var band_name = ee.String("Tair_mean")
+                      .cat(ee.Number(y).format("%d"))
+                      .cat("_")
+                      .cat(ee.Number(m).format("%d"));
+    // Calculate the probability of mosquito surviving and getting though EIP from tau to i
+    var lambda = lambda_func(Tair.select(ee.Number(tau).subtract(ee.Number(1)))
+                                 .subtract(ee.Image.constant(273.15)), 
+                             ee.Number(30).multiply(j_val).add(ee.Number(15)), 
+                             0); 
+    // Identify the year of forest data, then limit to those places with forest cover < 100 (i.e. land)                         
+    var year_forest = ee.Image(forest_cov.filterMetadata("year", "equals", y)
+                                             .first());
+    year_forest = year_forest.updateMask(year_forest.lte(ee.Image.constant(100)));
+    // Calculate bites on primates as percent forest cover times whether there are any primates
+    var pctP = rhoP.gt(ee.Image.constant(0))
+                   .multiply(year_forest.divide(ee.Image.constant(100)));
+    // Calculate number of mosquitoes biting primates
+    var beta = rhoV.multiply(gamma.get(ee.Number(tau).subtract(ee.Number(1))))
+                   .multiply(pctP);
+    // Calculate phenomenological primate infection prevalence
+    var phenom = ee.Algorithms.If(phenomenological, 
+      (((m.divide(12).add(y)).divide(7).multiply(2).multiply(pi)).sin().multiply(sin_coef))
+           .add(((m.divide(12).add(y)).divide(7).multiply(2).multiply(pi)).cos().multiply(cos_coef))
+           .add(0.5), 
+      ee.Number(1));
+    phenom = ee.Number(phenom).max(ee.Number(0.1)); // Set a lower bound on phenom
+    // Number of mosquitoes biting primates who are infectious, surviving, and getting though EIP
+    var toInt = beta.multiply(ee.Image.constant(ee.Number(phenom))).multiply(lambda);
+    // Calculate the pixel lenght, and use that to create the dispersal kernel
+    var pixel_length = toInt.projection().nominalScale();
+    var kern = kern_negExp(pixel_length, 10000); // kernel of 10km radius
+    // Use the dispersal kernel to estimate the number of mosquitoes ending up in each pixel
+    // who have bitten a primate, survived, and make it though EIP (i.e. potentially infectious mosquitoes)
+    return toInt.reduceNeighborhood({
+                reducer: ee.Reducer.sum(),
+                kernel: kern
+             });
+  }));
+  // For the month we are calculating risk for, get the year and forest cover data and limit to land areas only
+  var y_i = ee.Number.parse(times.get([i,0]));
+  var year_forest_i = ee.Image(forest_cov.filterMetadata("year", "equals", y_i)
+                                             .first());
+  year_forest_i = year_forest_i.updateMask(year_forest_i.lte(ee.Image.constant(100)));
+  // Use forest cover data to estimate how many of the bites there will go to humans
+  var pctH = ee.Image(yearlyPop.filterMetadata("year", "equals", y_i).first()).gt(0)
+              .multiply(ee.Image.constant(1).subtract(year_forest_i.divide(ee.Image.constant(100))));
+  // sum the number of potentially infectious mosquitoes over all tau and multiply by percent of bites on humans
+  var env_risk = beta_lambda_int.reduce(ee.Reducer.sum()).multiply(pctH);
+  // Scale environmental risk by percent of population unvaccinated to get ImmEnvRis,
+  var imm_env_risk = env_risk.multiply((ee.Image.constant(1).subtract(ee.Image(vc.filterMetadata("year", "equals", y_i)
+                                             .first()))));
+  // Scale ImmEnvRisk by human population to get PopRisk
+  var pop_risk = imm_env_risk.multiply(yearlyPop.filterMetadata("year", "equals", y_i).first().unmask(0));
+  return env_risk;
+}));
+var output = ee.String("PhenomEnvRisk");
+// Rename the bands to refer to the year and month 
+var out_names = obs_ind.map(function(i){
+  return output
+    .cat("_")
+    .cat(times.get([i,0]).format("%d"))
+    .cat("_")
+    .cat(times.get([i,1]).format("%d"));
+});
+var out = ests.toBands()
+  .rename(out_names);
+
+// Save the image to GEE Assets
+Export.image.toAsset({
+  image: out,
+  description: output.cat("_")
+    .cat(times_strings.get(obs_ind.get(0)))
+    .cat("_")
+    .cat(times_strings.get(obs_ind.get(-1)))
+    .getInfo(),
+  assetId: output.cat("_")
+    .cat(times_strings.get(obs_ind.get(0)))
+    .cat("_")
+    .cat(times_strings.get(obs_ind.get(-1)))
+    .getInfo(),
+  region: bound_box
+});

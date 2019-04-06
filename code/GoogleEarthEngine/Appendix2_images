@@ -1,0 +1,74 @@
+/* code for outputting images from risk metrics previously calculated. 
+Original intended purpose of this code was to make gif of risk metrics 
+for illustrative purposes. */
+
+// Import the brazil boder and risk metrics
+var brazil_border = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017").filter(ee.Filter.eq("country_na", "Brazil"));
+var brazil_bounds = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017").filter(ee.Filter.eq("country_na", "Brazil")).geometry().bounds();
+var env = ee.Image("users/marissac/YFV/EnvRisk_200012_201806");
+var imm = ee.Image("users/marissac/YFV/ImmEnvRisk_200101_201806");
+var pop = ee.Image("users/marissac/YFV/PopRisk_200101_201806");
+var phenom = ee.Image("users/marissac/YFV/PhenomEnvRisk_200101_201806");
+
+// cycle through 2001 - 2016 to manually export the risk images
+// Attempting to export multiple years at once caused the images 
+// to save as multi-tile images
+var year = ee.Number(2016); 
+
+// Convert the chosen year to the bans in the metrics we will be extracting
+var env_ind = ee.List.sequence(1, 12).map(function(ind){
+  return ee.Number(ind).add(year.subtract(2001).multiply(12));
+});
+var other_ind = ee.List.sequence(0, 11).map(function(ind){
+  return ee.Number(ind).add(year.subtract(2001).multiply(12));
+});
+
+// Export the selected bands to Google Drive and name the images informatively
+Export.image.toDrive({
+  image: env.select(env_ind).clipToCollection(brazil_border),
+  description: ee.String("EnvRisk").cat("_")
+    .cat(year)
+    .cat("01")
+    .cat("_")
+    .cat(year)
+    .cat("12")
+    .getInfo(),
+  folder: "YFV",
+  region: brazil_bounds
+});
+Export.image.toDrive({
+  image: imm.select(other_ind).clipToCollection(brazil_border),
+  description: ee.String("ImmEnvRisk").cat("_")
+    .cat(year)
+    .cat("01")
+    .cat("_")
+    .cat(year)
+    .cat("12")
+    .getInfo(),
+  folder: "YFV",
+  region: brazil_bounds
+});
+Export.image.toDrive({
+  image: pop.select(other_ind).clipToCollection(brazil_border),
+  description: ee.String("PopRisk").cat("_")
+    .cat(year)
+    .cat("01")
+    .cat("_")
+    .cat(year)
+    .cat("12")
+    .getInfo(),
+  folder: "YFV",
+  region: brazil_bounds
+});
+Export.image.toDrive({
+  image: phenom.select(other_ind).clipToCollection(brazil_border),
+  description: ee.String("PhenomEnvRisk").cat("_")
+    .cat(year)
+    .cat("01")
+    .cat("_")
+    .cat(year)
+    .cat("12")
+    .getInfo(),
+  folder: "YFV",
+  region: brazil_bounds
+});

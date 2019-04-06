@@ -1,0 +1,69 @@
+/*An incredibly inefficient code for selecting a random sample of 
+pixel values over all bands of an image. If too many pixels are 
+sampled at once, the calculation times out. So to get a large
+enough sample to estimate percentiles for all 4 risk metrics, 
+this must be run many times for each metric, changing the seed 
+each time and adjusting which estimate is selected as needed*/
+
+var brazil_border = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017").filter(ee.Filter.eq("country_na", "Brazil")).geometry();
+var env = ee.Image("users/marissac/YFV/EnvRisk_200012_201806");
+var imm = ee.Image("users/marissac/YFV/ImmEnvRisk_200101_201806");
+var pop = ee.Image("users/marissac/YFV/PopRisk_200101_201806");
+var phenom = ee.Image("users/marissac/YFV/PhenomEnvRisk_200101_201806");
+
+// Set which estimate you're looking at
+var est = imm;
+var est_name = ee.String("imm");
+
+// Set spatial and temporal random seeds
+var spatial_seed_start = ee.Number(1172860);
+var temporal_seed = ee.Number(5950942);
+
+// Set the number of random pixels to identify
+var npix = ee.Number(1000);
+
+// For each pixel, randomly generate a number 0 to 1 to determine which band 
+var rand_time = ee.Image.random(temporal_seed)
+  .sample({scale: 1, 
+           region: brazil_border,
+           numPixels: npix}).toList(npix)
+  .map(function(feat){
+    return ee.Feature(feat).toDictionary().values();
+}).map(function(elem){ return ee.List(elem).get(0) });
+
+// Calculate the number of bands in the estimate of interest
+var nbands = ee.Number(est.bandNames().length()).multiply(1.0);
+
+// For each pixel you want, get the band number, then sample that band
+// Afterwards, convert to a dictionary, then list of pixel values
+var est_sample = ee.List.sequence(1,npix).map(function(i){
+  var rand = rand_time.get(ee.Number(i).subtract(1));
+  var rand_band = ee.Number(rand).multiply(nbands).floor();
+  return est.select(rand_band).sample({
+    region: brazil_border,
+    numPixels: 1,
+    seed: ee.Number(spatial_seed_start).add(i)
+  }).toList(1).map(function(feat){
+    return ee.Feature(feat).toDictionary().values().get(0);
+});
+}).flatten();
+
+// Construct a feature with pixel values for export
+var est_feat = ee.Feature(
+  null, 
+  ee.Dictionary.fromLists(ee.List.sequence(1, est_sample.length()).map(function(num){ 
+                              return ee.Number(num).format("%d")}), 
+                          est_sample));
+
+// Export the feature to drive, saving its seeds in the name
+Export.table.toDrive({
+  collection: ee.FeatureCollection([est_feat]),
+  description: est_name.cat(ee.String("_sample_"))
+                       .cat(spatial_seed_start.format("%d"))
+                       .cat("_")  
+                       .cat(temporal_seed.format("%d"))
+                       .getInfo(),
+  fileFormat: 'CSV',
+  folder : "YFV"
+});
+

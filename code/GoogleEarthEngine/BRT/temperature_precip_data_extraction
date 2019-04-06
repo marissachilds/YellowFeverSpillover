@@ -1,0 +1,39 @@
+/* Code to extract monthly average precipitation rate and monthly 
+average temperature for each municipality in Brazil, relies on 
+previous monthly average (pixel) calculation performed and stored 
+as an asset */
+
+// Import municipality shapefiles, monthly temperature estimates, 
+// and monthly precip rates
+var muni = ee.FeatureCollection("users/marissac/YFV/brazil_municipality_shapes");
+var temp = ee.Image("users/marissac/YFV/TairMonthly_200002_201612");
+var precip = ee.ImageCollection("TRMM/3B43V7").filter(ee.Filter.calendarRange(2000, 2017, 'year'))
+.select(["precipitation"]).toBands();
+
+// Calculate mean temperature for each municipality
+var temp_mean = temp.reduceRegions(muni,
+                                  ee.Reducer.mean())
+                     .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+// Save the mean temperatures to drive
+Export.table.toDrive({
+  collection: temp_mean,
+  description: "mean_temperature_200002_201612",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});
+
+// Calculate mean precip rate for each municipality 
+var precip_mean = precip.reduceRegions(muni,
+                                  ee.Reducer.mean())
+                     .map(function(feature){
+                      return(ee.Feature(feature).setGeometry(null));
+                    });
+// Save the mean temperatures to drive
+Export.table.toDrive({
+  collection: precip_mean,
+  description: "mean_precipitation_200001_201712",
+  fileFormat: 'CSV',
+  folder : "YFV"
+});
