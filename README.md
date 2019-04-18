@@ -5,29 +5,23 @@ These are the scripts and data used for analysis in the manuscript "Mosquito and
 
 ## File organization 
 
-only include the best BRT for space
+The files are organized into code, output, and data directories. Most analyses rely on code or scripts in the "code" directory, and data either in the "data/raw" or data/cleaned" directory. The code/script will usually save its output either as an image, R data file, or csv in the "output" directory. Note that for each R script included, the working directory should be set to this top directory (i.e. to "YellowFeverSpillover"). 
 
-For every R script, set the working directory to the top directory of this (i.e. to "YellowFeverSpillover")
+In some cases, we have not included files due to data use restrictions or size constraints. These include the MODIS MOD44B data for all of Brazil from 2001 - 2016, the IUCN shapefiles used for primate ranges, and the GBIF species occurrences. 
 
 ## Workflow
 
 The following is the workflow for the analysis in this manuscript. Note that R refers to the R programming language and GEE refers to Google Earth Engine. 
 
 1. Unzip the shapefiles in the data/raw directory. They are in the Primates directory and brazil_border_shapefiles directory. 
-2. Run submodels of spillover components. 
-
-input the parameters and SDM map to google earth engine/google earth engine code
-GEE: get monthly max temperatures
-GEE: run spillover model  for env, imm env, pop, and phenom env risk by changing XYZ in the script
-GEE: extract the muni maxes and means 
-GEE: extract other BRT data 
-R: combine model and case data 
-R: split BRT data into test and training
-R: run BRTs
-R: compare BRTs and calculate AUC of the best with test data
-for size, we've only included the best brt result, others available on request
-R: run model evals, making figures 3-6
-
-for all code, set wd to YellowFeverSpillover 
-
-include link to GEE
+2. Run submodels of spillover components. These include the dispersal, EIP (infectiousness), species distribution model (SDM), seasonality, survival, and phenomenological primate dynamics models. Code for each of these submodels can be found in the "code" directory   
+3. Input the parameters from the submodels into the GEE code (lines 89-105 of "code/GoogleEarthEngine/spillover_model") and upload the SDM map to a GEE asset. 
+4. Run the GEE script to extract monthly average temperatures for each pixel ("code/GoogleEarthEngine/get_monthly_data") and save the output as a GEE asset. 
+5. Run the spillover model for environmental, immunological, population-scaled and periodic risk by changing lines 203, 268, and 270 in the "code/GoogleEarthEngine/spillover_model" script. The risk estimates are saved as GEE image assets.
+6. Extract the municipality maximum risk and mean risk for each risk metric in GEE using the script "code/GoogleEarthEngine/extract_mean_max_model_est". Extracting for all 4 risk metrics will require cycling through the different GEE image assets that are the risk estimates. They should be placed in the directory "output/municipality_model_estimates".
+7. Also extract data for the BRT for each municipality-month using all of the scripts in "code/GoogleEarthEngine/BRT" directory. The extracted data should then be placed in "data/cleaned/BRT_data".
+8. Now in R, combine the model estimates and case data using the script "code/other/combine_model_case.R". This will save an R data file "all_data.rds" in the directory "data/cleaned". It will also save a subset of the data that is from 2001-2016 to "data/cleaned/BRT_data/brt_data.rds".
+9. The BRT data should then be split into test and training data ensuring spatial and temporal balance using the script "code/other/split_brt_data.R". The test and training data will be saved to the directory "data/cleaned/BRT_data".
+10. Next run the boosted regression trees with the script "code/other/run_BRT.R" and fit to the training data. Currently this script runs the boosted regression tree for the optimal tree complexity (10) and learning rate (0.001) but changing the variables tc and lr in the script will adjust these parameters. The resulting BRT will be saved as an R data file in the directory "output/BRT_fits". Note that for size purposes, we have only included the best fitting BRT in this GitHub respository.
+11. Now compare the BRT fits to find the one with the lowest residual deviance using "code/other/BRT_compare". 
+12. Finally, run the script "code/other/model_eval" to calculate and produce results, tables, and figures 3-6 in the manuscript.  
