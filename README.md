@@ -9,6 +9,12 @@ The files are organized into code, output, and data directories. Most analyses r
 
 In some cases, we have not included files due to data use restrictions or size constraints. These include the MODIS MOD44B data for all of Brazil from 2001 - 2016, the IUCN shapefiles used for primate ranges, and the GBIF species occurrences. 
 
+Below are the doi's for the GBIF data and the locations to save these datasets. Once the datasets are downloaded and saved to the appropriate locations, run the script "code/SDM/clean_species_occurrences.R" to generate the cleaned dataset of species occurrences used in the SDM. This should be done before step 2 in the workflow below.  
+https://doi.org/10.15468/dl.wvs9g2 saved as "data/raw/SDM/all_mosquitoes_SA.csv"
+https://doi.org/10.15468/dl.ozsvnj saved as "data/raw/SDM/Hg.leucoceleanus.gbif.csv"
+https://doi.org/10.15468/dl.gxbxtq saved as "data/raw/SDM/Hg.janthinomys.gbif.csv"
+https://doi.org/10.15468/dl.1uo4ty saved as "data/raw/SDM/Sa.chloropterus.gbif.csv"
+
 ## Workflow
 
 The following is the workflow for the analysis in this manuscript. Note that R refers to the R programming language and GEE refers to Google Earth Engine. 
