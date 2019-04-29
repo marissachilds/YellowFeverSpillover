@@ -7,9 +7,13 @@ These are the scripts and data used for analysis in the manuscript "Mosquito and
 
 The files are organized into code, output, and data directories. Most analyses rely on code or scripts in the "code" directory, and data either in the "data/raw" or data/cleaned" directory. The code/script will usually save its output either as an image, R data file, or csv in the "output" directory. Note that for each R script included, the working directory should be set to this top directory (i.e. to "YellowFeverSpillover"). 
 
-In some cases, we have not included files due to data use restrictions or size constraints. These include the MODIS MOD44B data for all of Brazil from 2001 - 2016, the IUCN shapefiles used for primate ranges, and the GBIF species occurrences. 
+In some cases, we have not included files due to data use restrictions or size constraints. These include the MODIS MOD44B data for all of Brazil from 2001 - 2016, the IUCN shapefiles used for primate ranges, and the GBIF species occurrences. Below are descriptions of how to download and incorporate these datasets.
 
-Below are the doi's for the GBIF data and the locations to save these datasets. Once the datasets are downloaded and saved to the appropriate locations, run the script "code/SDM/clean_species_occurrences.R" to generate the cleaned dataset of species occurrences used in the SDM. This should be done before step 2 in the workflow below.  
+**For MODIS MOD44B data:** The forest cover data used from MODIS was uploaded as a Google Earth Engine asset and is available at https://code.earthengine.google.com/?asset=users/marissac/YFV/MOD44B_Brazil_reprojected
+
+**For IUCN primate data:** The shapefiles for species ranges of terrestrial mammals can be downloaded from https://www.iucnredlist.org/resources/spatial-data-download and then saved as "data/raw/primates/TERRESTRIAL_MAMMALS". Then run the script "code/other/primate_data_cleaning.R" which will limit the primate species to genuses known to carry yellow fever. The resulting shapefile of relevant primates will be saved as "data/cleaned/primates". This shapefile can then be uploaded to a Google Earth Engine asset and references in all locations where the "primates" asset is referred to. 
+
+**For GBIF mosquito occurrences:** Below are the doi's for the GBIF data and the locations to save these datasets. Once the datasets are downloaded and saved to the appropriate locations, run the script "code/SDM/clean_species_occurrences.R" to generate the cleaned dataset of species occurrences used in the SDM. This should be done before step 2 in the workflow below.  
 
 https://doi.org/10.15468/dl.wvs9g2 saved as "data/raw/SDM/all_mosquitoes_SA.csv"
 
@@ -21,7 +25,7 @@ https://doi.org/10.15468/dl.1uo4ty saved as "data/raw/SDM/Sa.chloropterus.gbif.c
 
 ## Workflow
 
-The following is the workflow for the analysis in this manuscript. Note that R refers to the R programming language and GEE refers to Google Earth Engine. 
+The following is the workflow for the analysis in this manuscript. Note that R refers to the R programming language and GEE refers to Google Earth Engine. **Further note that for each R script included, the working directory should be set to this top directory (i.e. to "YellowFeverSpillover"). Additionally, the assets referred to in the Google Earth Engine scripts should be adjusted to refer to the users own assets.**
 
 1. Unzip the shapefiles in the data/raw directory. They are in the Primates directory and brazil_border_shapefiles directory. 
 2. Run submodels of spillover components. These include the dispersal, EIP (infectiousness), species distribution model (SDM), seasonality, survival, and phenomenological primate dynamics models. Code for each of these submodels can be found in the "code" directory   
