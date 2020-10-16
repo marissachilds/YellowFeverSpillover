@@ -46,7 +46,7 @@ plot(predictors)
 # Construct biased background points ----
 # Read in all mosquito data from GBIF and exclude species of interest 
 all_mosq <- read.csv(
-  "./data/raw/SDM/species occurrence data/all_mosquitoes_SA.csv", 
+  "./data/raw/SDM/species_occurrence_data/all_mosquitoes_SA.csv", 
   sep = "\t", header = T, stringsAsFactors = F)
 all_mosq %<>% base::subset(!(species %in% c("Haemagogus janthinomys", 
                                         "Haemagogus leucocelaenus", 
@@ -79,7 +79,7 @@ predictors_df <- rbind(data.frame(raster::extract(predictors, occ.GPS.unique)),
 predictors_df %<>% mutate(LandCover = as.factor(LandCover))
 
 # fit a maxnet model, calibrating for regularization parameters and feature classes
-source("code/SDM/SDM_functions.v2.R")
+source("code/SDM/SDM_functions.R")
 maxnet_fit <- trainMaxNet(data=cbind(c(rep(1, nrow(occ.GPS.unique)), 
                                        rep(0, a)), predictors_df),
                           classes = "lqhp",
