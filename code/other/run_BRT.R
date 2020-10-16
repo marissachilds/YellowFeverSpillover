@@ -11,7 +11,7 @@ library(dismo)
 library(gbm)
 
 # Read in the training data
-df_brt = readRDS("./data/BRT_data/brt_train.rds")
+df_brt = readRDS("./data/cleaned/BRT_data/brt_train.rds")
 
 # Clean up the data to make sure its all in order
 df_brt$region = as.factor(df_brt$region)
